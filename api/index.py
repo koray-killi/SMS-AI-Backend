@@ -138,7 +138,6 @@ def webhook():
             model=MODEL,
             messages=messages,
             tools=TOOLS,
-            tool_choice="auto",
             max_tokens=500,
             temperature=0.7
         )
@@ -154,12 +153,8 @@ def webhook():
             # Tavily ile arama yap
             search_result = search_web(query)
 
-            # Arama sonucunu mesaj geçmişine ekle
-            # ÖNEMLİ: Gemini compat katmanı raw Pydantic objesini kabul etmez,
-            # dict olarak serialize etmemiz gerekiyor.
-            messages.append({
+            assistant_msg = {
                 "role": "assistant",
-                "content": msg.content or "",
                 "tool_calls": [
                     {
                         "id": tool_call.id,
@@ -170,7 +165,11 @@ def webhook():
                         }
                     }
                 ]
-            })
+            }
+            # content alanını sadece doluysa ekle — Gemini boş string kabul etmez
+            if msg.content:
+                assistant_msg["content"] = msg.content
+            messages.append(assistant_msg)
             messages.append({
                 "role":         "tool",
                 "tool_call_id": tool_call.id,
@@ -209,11 +208,13 @@ def webhook():
     except openai_lib.RateLimitError:
         return jsonify({"reply": "Şu an yoğunluk var, birazdan tekrar yaz."}), 429
     except openai_lib.APIStatusError as e:
+        # Hata detayını logla — debug için kritik
+        error_body = str(e.body) if hasattr(e, 'body') else str(e)
         if e.status_code == 503:
             return jsonify({"reply": "AI servisi şu an meşgul, biraz sonra dene."}), 503
         if e.status_code == 504 or e.status_code == 408:
             return jsonify({"reply": "Yanıt geç geldi, tekrar dene."}), 504
-        return jsonify({"reply": f"API hatası ({e.status_code})."}), 500
+        return jsonify({"reply": f"API hatası ({e.status_code}): {error_body[:200]}"}), 500
     except openai_lib.APITimeoutError:
         return jsonify({"reply": "Yanıt geç geldi, tekrar dene."}), 504
     except openai_lib.APIConnectionError:

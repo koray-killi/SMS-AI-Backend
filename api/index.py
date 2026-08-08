@@ -134,8 +134,6 @@ def webhook():
 
     try:
         # ── 1. İstek: AI arama yapmak istiyor mu? ───────────────────────────
-        # max_tokens=500: tool call JSON'ı üretimi için yeterli alan gerekir.
-        # Düşük limit NVIDIA NIM'de 400 hatasına neden olur.
         response = llm.chat.completions.create(
             model=MODEL,
             messages=messages,
@@ -157,7 +155,22 @@ def webhook():
             search_result = search_web(query)
 
             # Arama sonucunu mesaj geçmişine ekle
-            messages.append(msg)                         # asistan mesajı (tool call içeren)
+            # ÖNEMLİ: Gemini compat katmanı raw Pydantic objesini kabul etmez,
+            # dict olarak serialize etmemiz gerekiyor.
+            messages.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments
+                        }
+                    }
+                ]
+            })
             messages.append({
                 "role":         "tool",
                 "tool_call_id": tool_call.id,
@@ -165,17 +178,31 @@ def webhook():
             })
 
             # ── 3. İstek: Arama sonucuyla birlikte final SMS yanıtı ─────────
-            # max_tokens=152: Türkçe UCS-2 SMS sınırı (2 segment)
             final_response = llm.chat.completions.create(
                 model=MODEL,
                 messages=messages,
-                max_tokens=152,
+                max_tokens=256,
                 temperature=0.7
             )
             bot_reply = final_response.choices[0].message.content
         else:
             # Arama gerekmedi, direkt yanıt
             bot_reply = msg.content
+
+        # ── Null/boş yanıt koruması ──────────────────────────────────────────
+        # Gemini compat katmanı bazen content=None döner (tool call parse hatası).
+        # Bu durumda tool'suz sade bir istek gönder.
+        if not bot_reply or not bot_reply.strip():
+            fallback_response = llm.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": user_message}
+                ],
+                max_tokens=256,
+                temperature=0.7
+            )
+            bot_reply = fallback_response.choices[0].message.content or "Tekrar yaz, yanıt oluşturulamadı."
 
         return jsonify({"reply": bot_reply})
 

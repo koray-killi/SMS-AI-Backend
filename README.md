@@ -10,7 +10,7 @@
 
 ### Proje Hakkında
 
-Bu proje, iPhone'da çalışan bir **Apple Kestirmesi (Shortcut)** tarafından tetiklenir. Kullanıcıya SMS gelen anda Kestirme devreye girer, mesajı bu backend sunucusuna iletir ve sunucu **DeepSeek AI** kullanarak kısa, SMS'e uygun bir yanıt üretir. Yanıt tekrar Kestirme'ye döner ve otomatik SMS olarak gönderilebilir.
+Bu proje, iPhone'da çalışan bir **Apple Kestirmesi (Shortcut)** tarafından tetiklenir. Kullanıcıya SMS gelen anda Kestirme devreye girer, mesajı bu backend sunucusuna iletir ve sunucu **NVIDIA NIM üzerinde çalışan Llama-3.3-70B** kullanarak kısa, SMS'e uygun bir yanıt üretir. Güncel bilgi gereken sorularda (hava, haberler, spor) **Tavily** ile gerçek zamanlı web araması yapılır. Yanıt tekrar Kestirme'ye döner ve otomatik SMS olarak gönderilebilir.
 
 ### Nasıl Çalışır?
 
@@ -21,7 +21,15 @@ Gelen SMS
 Apple Kestirmesi (Shortcut)
     │  JSON body: { "mesaj": "..." }
     ▼
-POST /api/webhook  ──►  DeepSeek AI
+POST /api/webhook
+    │
+    ├─► NVIDIA NIM (Llama-3.3-70B) — Arama gerekiyor mu?
+    │         │
+    │    Evet ▼
+    │   Tavily Web Araması
+    │         │
+    └─────────▼
+         Final SMS Yanıtı (maks. 152 karakter)
     │
     ▼
 JSON yanıt: { "reply": "..." }
@@ -32,11 +40,13 @@ Apple Kestirmesi otomatik yanıt gönderir
 
 ### Özellikler
 
-- 🤖 **DeepSeek AI** entegrasyonu (OpenAI SDK uyumlu)
+- 🤖 **NVIDIA NIM** — `meta/llama-3.3-70b-instruct` modeli
+- 🔄 **Provider Seçici** — `LLM_PROVIDER` env değişkeni ile DeepSeek'e tek satırda geçiş
+- 🔍 **Agresif Arama Politikası** — Tarih, hava, haberler, kur, spor sorularında otomatik Tavily araması
 - 📲 **Apple Kestirmeler** ile tam uyumluluk
 - ⚡ **Vercel** serverless deployment
 - 🔐 `.env` ile güvenli API key yönetimi
-- 📏 SMS boyutuna uygun kısa yanıtlar (maks. ~150 karakter)
+- 📏 Türkçe SMS boyutuna uygun yanıtlar (maks. 152 karakter — UCS-2 encoding, 2 segment)
 
 ### Kurulum
 
@@ -66,10 +76,13 @@ cp .env.example .env
 `.env` dosyasını düzenle:
 
 ```env
-DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxxxxxxxxxx
+TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
+LLM_PROVIDER=nvidia
 ```
 
-> DeepSeek API anahtarını [platform.deepseek.com](https://platform.deepseek.com) adresinden edinebilirsin.
+> NVIDIA API anahtarını [build.nvidia.com](https://build.nvidia.com) adresinden edinebilirsin.  
+> Tavily API anahtarını [app.tavily.com](https://app.tavily.com) adresinden edinebilirsin.
 
 #### 4. Yerel Sunucuyu Başlat
 
@@ -79,6 +92,17 @@ python api/index.py
 
 Sunucu `http://localhost:5000` adresinde çalışmaya başlar.
 
+### Provider Değiştirme (DeepSeek Fallback)
+
+Modeli DeepSeek ile kullanmak istersen `.env` dosyasında:
+
+```env
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Başka bir kod değişikliğine gerek yok.
+
 ### API Kullanımı
 
 #### `POST /api/webhook`
@@ -87,7 +111,7 @@ Sunucu `http://localhost:5000` adresinde çalışmaya başlar.
 
 ```json
 {
-  "mesaj": "Bugün nasılsın?"
+  "mesaj": "Bugün hava nasıl İstanbul'da?"
 }
 ```
 
@@ -95,17 +119,18 @@ Sunucu `http://localhost:5000` adresinde çalışmaya başlar.
 
 ```json
 {
-  "reply": "İyiyim, teşekkürler! Sen nasılsın?"
+  "reply": "İstanbul'da bugün 28°C, güneşli ama akşam bulut gelecek. ☀️"
 }
 ```
 
-**Hata Yanıtı (400):**
+**Hata Yanıtları:**
 
-```json
-{
-  "reply": "Mesaj alınamadı."
-}
-```
+| Kod | Açıklama |
+|-----|----------|
+| 400 | Mesaj gövdesi boş |
+| 429 | Rate limit aşıldı |
+| 504 | Zaman aşımı |
+| 500 | Genel hata |
 
 ### Apple Kestirmesi Kurulumu
 
@@ -125,7 +150,13 @@ npm i -g vercel
 vercel
 ```
 
-Vercel Dashboard'da **Settings → Environment Variables** bölümüne `DEEPSEEK_API_KEY` değerini ekle.
+Vercel Dashboard'da **Settings → Environment Variables** bölümüne şu değerleri ekle:
+
+| Değişken | Açıklama |
+|----------|----------|
+| `NVIDIA_API_KEY` | NVIDIA NIM API anahtarı |
+| `TAVILY_API_KEY` | Tavily web arama API anahtarı |
+| `LLM_PROVIDER` | `nvidia` veya `deepseek` |
 
 ---
 
@@ -133,7 +164,7 @@ Vercel Dashboard'da **Settings → Environment Variables** bölümüne `DEEPSEEK
 
 ### About the Project
 
-This project is triggered by an **Apple Shortcut** running on iPhone. When an SMS arrives, the Shortcut fires, forwards the message to this backend server, and the server generates a short, SMS-friendly reply using **DeepSeek AI**. The reply is sent back to the Shortcut, which can then automatically respond to the SMS.
+This project is triggered by an **Apple Shortcut** running on iPhone. When an SMS arrives, the Shortcut fires, forwards the message to this backend server, and the server generates a short, SMS-friendly reply using **Llama-3.3-70B on NVIDIA NIM**. For queries requiring current information (weather, news, sports), the server performs a real-time web search via **Tavily**.
 
 ### How It Works
 
@@ -144,7 +175,15 @@ Incoming SMS
 Apple Shortcuts
     │  JSON body: { "mesaj": "..." }
     ▼
-POST /api/webhook  ──►  DeepSeek AI
+POST /api/webhook
+    │
+    ├─► NVIDIA NIM (Llama-3.3-70B) — Does this need a search?
+    │         │
+    │    Yes  ▼
+    │   Tavily Web Search
+    │         │
+    └─────────▼
+         Final SMS Reply (max 152 characters)
     │
     ▼
 JSON response: { "reply": "..." }
@@ -155,11 +194,13 @@ Apple Shortcuts sends automated reply
 
 ### Features
 
-- 🤖 **DeepSeek AI** integration (OpenAI SDK compatible)
+- 🤖 **NVIDIA NIM** — `meta/llama-3.3-70b-instruct` model
+- 🔄 **Provider Switcher** — Switch to DeepSeek via `LLM_PROVIDER` env var
+- 🔍 **Aggressive Search Policy** — Auto Tavily search for dates, weather, news, prices, sports
 - 📲 Full **Apple Shortcuts** compatibility
 - ⚡ **Vercel** serverless deployment
 - 🔐 Secure API key management via `.env`
-- 📏 SMS-length optimized replies (max ~150 characters)
+- 📏 Turkish SMS-optimized replies (max 152 chars — UCS-2 encoding, 2 segments)
 
 ### Setup
 
@@ -180,8 +221,6 @@ pip install -r requirements.txt
 
 #### 3. Configure Environment Variables
 
-Copy the example env file:
-
 ```bash
 cp .env.example .env
 ```
@@ -189,10 +228,13 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxxxxxxxxxx
+TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
+LLM_PROVIDER=nvidia
 ```
 
-> Get your DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).
+> Get your NVIDIA API key at [build.nvidia.com](https://build.nvidia.com).  
+> Get your Tavily API key at [app.tavily.com](https://app.tavily.com).
 
 #### 4. Run the Local Server
 
@@ -200,7 +242,16 @@ DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 python api/index.py
 ```
 
-The server starts at `http://localhost:5000`.
+Server starts at `http://localhost:5000`.
+
+### Switching Providers (DeepSeek Fallback)
+
+```env
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+No code changes required.
 
 ### API Reference
 
@@ -210,7 +261,7 @@ The server starts at `http://localhost:5000`.
 
 ```json
 {
-  "mesaj": "How are you today?"
+  "mesaj": "What's the weather in Istanbul today?"
 }
 ```
 
@@ -218,28 +269,9 @@ The server starts at `http://localhost:5000`.
 
 ```json
 {
-  "reply": "I'm doing great, thanks for asking!"
+  "reply": "Istanbul: 28°C, sunny with clouds expected in the evening. ☀️"
 }
 ```
-
-**Error Response (400):**
-
-```json
-{
-  "reply": "Mesaj alınamadı."
-}
-```
-
-### Apple Shortcuts Setup
-
-1. Open the **Shortcuts** app on iPhone
-2. Go to the **Automation** tab and create a new automation
-3. Choose **"When I receive a message"** as the trigger
-4. Add a **"Get Contents of URL"** action:
-   - URL: `https://<your-vercel-domain>/api/webhook`
-   - Method: `POST`
-   - Request Body: `JSON` → `mesaj: [Shortcut Input / SMS text]`
-5. Connect the returned `reply` value to a **"Send Message"** action
 
 ### Deploy to Vercel
 
@@ -248,7 +280,13 @@ npm i -g vercel
 vercel
 ```
 
-In the Vercel Dashboard, add `DEEPSEEK_API_KEY` under **Settings → Environment Variables**.
+Add these environment variables in Vercel Dashboard under **Settings → Environment Variables**:
+
+| Variable | Description |
+|----------|-------------|
+| `NVIDIA_API_KEY` | NVIDIA NIM API key |
+| `TAVILY_API_KEY` | Tavily web search API key |
+| `LLM_PROVIDER` | `nvidia` or `deepseek` |
 
 ---
 
@@ -257,7 +295,7 @@ In the Vercel Dashboard, add `DEEPSEEK_API_KEY` under **Settings → Environment
 ```
 vercel-sms-ai/
 ├── api/
-│   └── index.py        # Flask app & DeepSeek API handler
+│   └── index.py        # Flask app, LLM provider selector & webhook handler
 ├── .env                # Local secrets (git ignored)
 ├── .env.example        # Template for environment variables
 ├── .gitignore
@@ -271,8 +309,10 @@ vercel-sms-ai/
 | Technology | Purpose |
 |---|---|
 | Python + Flask | Web server |
-| DeepSeek API | AI language model |
-| OpenAI SDK | API client (DeepSeek compatible) |
+| NVIDIA NIM (Llama-3.3-70B) | Primary AI language model |
+| DeepSeek | Fallback AI provider |
+| OpenAI SDK | API client (compatible with both NVIDIA NIM & DeepSeek) |
+| Tavily | Real-time web search for current information |
 | python-dotenv | Local environment variable loading |
 | Vercel | Serverless hosting |
 | Apple Shortcuts | SMS automation trigger |

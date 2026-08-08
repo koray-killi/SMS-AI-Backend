@@ -10,7 +10,7 @@
 
 ### Proje Hakkında
 
-Bu proje, iPhone'da çalışan bir **Apple Kestirmesi (Shortcut)** tarafından tetiklenir. Kullanıcıya SMS gelen anda Kestirme devreye girer, mesajı bu backend sunucusuna iletir ve sunucu **NVIDIA NIM üzerinde çalışan Llama-3.3-70B** kullanarak kısa, SMS'e uygun bir yanıt üretir. Güncel bilgi gereken sorularda (hava, haberler, spor) **Tavily** ile gerçek zamanlı web araması yapılır. Yanıt tekrar Kestirme'ye döner ve otomatik SMS olarak gönderilebilir.
+Bu proje, iPhone'da çalışan bir **Apple Kestirmesi (Shortcut)** tarafından tetiklenir. Kullanıcıya SMS gelen anda Kestirme devreye girer, mesajı bu backend sunucusuna iletir ve sunucu **Google Gemini (gemini-3.5-flash)** kullanarak kısa, SMS'e uygun bir yanıt üretir. Güncel bilgi gereken sorularda (hava, haberler, spor) **Tavily** ile gerçek zamanlı web araması yapılır. Yanıt tekrar Kestirme'ye döner ve otomatik SMS olarak gönderilebilir.
 
 ### Nasıl Çalışır?
 
@@ -23,7 +23,7 @@ Apple Kestirmesi (Shortcut)
     ▼
 POST /api/webhook
     │
-    ├─► NVIDIA NIM (Llama-3.3-70B) — Arama gerekiyor mu?
+    ├─► Gemini 3.5 Flash — Arama gerekiyor mu?
     │         │
     │    Evet ▼
     │   Tavily Web Araması
@@ -40,8 +40,8 @@ Apple Kestirmesi otomatik yanıt gönderir
 
 ### Özellikler
 
-- 🤖 **NVIDIA NIM** — `meta/llama-3.3-70b-instruct` modeli
-- 🔄 **Provider Seçici** — `LLM_PROVIDER` env değişkeni ile DeepSeek'e tek satırda geçiş
+- 🤖 **Google Gemini** — `gemini-3.5-flash` modeli (ücretsiz tier: 15 RPM, 1500 RPD)
+- 🔄 **Provider Seçici** — `LLM_PROVIDER` env değişkeni ile NVIDIA NIM veya DeepSeek'e geçiş
 - 🔍 **Agresif Arama Politikası** — Tarih, hava, haberler, kur, spor sorularında otomatik Tavily araması
 - 📲 **Apple Kestirmeler** ile tam uyumluluk
 - ⚡ **Vercel** serverless deployment
@@ -76,12 +76,12 @@ cp .env.example .env
 `.env` dosyasını düzenle:
 
 ```env
-NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=AIzaSy-xxxxxxxxxxxxxxxxxxxxxxxx
 TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
-LLM_PROVIDER=nvidia
+LLM_PROVIDER=gemini
 ```
 
-> NVIDIA API anahtarını [build.nvidia.com](https://build.nvidia.com) adresinden edinebilirsin.  
+> Gemini API anahtarını [aistudio.google.com](https://aistudio.google.com) adresinden edinebilirsin (ücretsiz).  
 > Tavily API anahtarını [app.tavily.com](https://app.tavily.com) adresinden edinebilirsin.
 
 #### 4. Yerel Sunucuyu Başlat
@@ -92,16 +92,17 @@ python api/index.py
 
 Sunucu `http://localhost:5000` adresinde çalışmaya başlar.
 
-### Provider Değiştirme (DeepSeek Fallback)
+### Provider Değiştirme
 
-Modeli DeepSeek ile kullanmak istersen `.env` dosyasında:
+`.env` dosyasında `LLM_PROVIDER` değerini değiştirerek provider geçişi yapabilirsin:
 
-```env
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-```
+| Provider | `LLM_PROVIDER` | API Key | Model |
+|----------|----------------|---------|-------|
+| **Google Gemini** (varsayılan) | `gemini` | `GEMINI_API_KEY` | `gemini-3.5-flash` |
+| NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` | `meta/llama-3.3-70b-instruct` |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` |
 
-Başka bir kod değişikliğine gerek yok.
+Kod değişikliğine gerek yok — tüm providerlar OpenAI SDK uyumlu endpoint kullanır.
 
 ### API Kullanımı
 
@@ -129,6 +130,8 @@ Başka bir kod değişikliğine gerek yok.
 |-----|----------|
 | 400 | Mesaj gövdesi boş |
 | 429 | Rate limit aşıldı |
+| 502 | Bağlantı hatası |
+| 503 | AI servisi meşgul |
 | 504 | Zaman aşımı |
 | 500 | Genel hata |
 
@@ -154,9 +157,9 @@ Vercel Dashboard'da **Settings → Environment Variables** bölümüne şu değe
 
 | Değişken | Açıklama |
 |----------|----------|
-| `NVIDIA_API_KEY` | NVIDIA NIM API anahtarı |
+| `GEMINI_API_KEY` | Google Gemini API anahtarı |
 | `TAVILY_API_KEY` | Tavily web arama API anahtarı |
-| `LLM_PROVIDER` | `nvidia` veya `deepseek` |
+| `LLM_PROVIDER` | `gemini`, `nvidia` veya `deepseek` |
 
 ---
 
@@ -164,7 +167,7 @@ Vercel Dashboard'da **Settings → Environment Variables** bölümüne şu değe
 
 ### About the Project
 
-This project is triggered by an **Apple Shortcut** running on iPhone. When an SMS arrives, the Shortcut fires, forwards the message to this backend server, and the server generates a short, SMS-friendly reply using **Llama-3.3-70B on NVIDIA NIM**. For queries requiring current information (weather, news, sports), the server performs a real-time web search via **Tavily**.
+This project is triggered by an **Apple Shortcut** running on iPhone. When an SMS arrives, the Shortcut fires, forwards the message to this backend server, and the server generates a short, SMS-friendly reply using **Google Gemini (gemini-3.5-flash)**. For queries requiring current information (weather, news, sports), the server performs a real-time web search via **Tavily**.
 
 ### How It Works
 
@@ -177,7 +180,7 @@ Apple Shortcuts
     ▼
 POST /api/webhook
     │
-    ├─► NVIDIA NIM (Llama-3.3-70B) — Does this need a search?
+    ├─► Gemini 3.5 Flash — Does this need a search?
     │         │
     │    Yes  ▼
     │   Tavily Web Search
@@ -194,8 +197,8 @@ Apple Shortcuts sends automated reply
 
 ### Features
 
-- 🤖 **NVIDIA NIM** — `meta/llama-3.3-70b-instruct` model
-- 🔄 **Provider Switcher** — Switch to DeepSeek via `LLM_PROVIDER` env var
+- 🤖 **Google Gemini** — `gemini-3.5-flash` model (free tier: 15 RPM, 1500 RPD)
+- 🔄 **Provider Switcher** — Switch to NVIDIA NIM or DeepSeek via `LLM_PROVIDER` env var
 - 🔍 **Aggressive Search Policy** — Auto Tavily search for dates, weather, news, prices, sports
 - 📲 Full **Apple Shortcuts** compatibility
 - ⚡ **Vercel** serverless deployment
@@ -228,12 +231,12 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=AIzaSy-xxxxxxxxxxxxxxxxxxxxxxxx
 TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
-LLM_PROVIDER=nvidia
+LLM_PROVIDER=gemini
 ```
 
-> Get your NVIDIA API key at [build.nvidia.com](https://build.nvidia.com).  
+> Get your Gemini API key for free at [aistudio.google.com](https://aistudio.google.com).  
 > Get your Tavily API key at [app.tavily.com](https://app.tavily.com).
 
 #### 4. Run the Local Server
@@ -244,34 +247,15 @@ python api/index.py
 
 Server starts at `http://localhost:5000`.
 
-### Switching Providers (DeepSeek Fallback)
+### Switching Providers
 
-```env
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-```
+| Provider | `LLM_PROVIDER` | API Key | Model |
+|----------|----------------|---------|-------|
+| **Google Gemini** (default) | `gemini` | `GEMINI_API_KEY` | `gemini-3.5-flash` |
+| NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` | `meta/llama-3.3-70b-instruct` |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` |
 
-No code changes required.
-
-### API Reference
-
-#### `POST /api/webhook`
-
-**Request Body (JSON):**
-
-```json
-{
-  "mesaj": "What's the weather in Istanbul today?"
-}
-```
-
-**Success Response (200):**
-
-```json
-{
-  "reply": "Istanbul: 28°C, sunny with clouds expected in the evening. ☀️"
-}
-```
+No code changes required — all providers use OpenAI SDK compatible endpoints.
 
 ### Deploy to Vercel
 
@@ -284,9 +268,9 @@ Add these environment variables in Vercel Dashboard under **Settings → Environ
 
 | Variable | Description |
 |----------|-------------|
-| `NVIDIA_API_KEY` | NVIDIA NIM API key |
+| `GEMINI_API_KEY` | Google Gemini API key |
 | `TAVILY_API_KEY` | Tavily web search API key |
-| `LLM_PROVIDER` | `nvidia` or `deepseek` |
+| `LLM_PROVIDER` | `gemini`, `nvidia` or `deepseek` |
 
 ---
 
@@ -309,9 +293,9 @@ vercel-sms-ai/
 | Technology | Purpose |
 |---|---|
 | Python + Flask | Web server |
-| NVIDIA NIM (Llama-3.3-70B) | Primary AI language model |
-| DeepSeek | Fallback AI provider |
-| OpenAI SDK | API client (compatible with both NVIDIA NIM & DeepSeek) |
+| Google Gemini (gemini-3.5-flash) | Primary AI language model (free tier) |
+| NVIDIA NIM / DeepSeek | Fallback AI providers |
+| OpenAI SDK | API client (compatible with all providers) |
 | Tavily | Real-time web search for current information |
 | python-dotenv | Local environment variable loading |
 | Vercel | Serverless hosting |

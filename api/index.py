@@ -15,26 +15,36 @@ app = Flask(__name__)
 def _build_client() -> tuple[OpenAI, str]:
     """
     LLM_PROVIDER env değişkenine göre istemci ve model adını döndürür.
-    Desteklenen değerler: 'nvidia' (varsayılan), 'deepseek'
+    Desteklenen değerler: 'gemini' (varsayılan), 'nvidia', 'deepseek'
     """
-    provider = os.environ.get("LLM_PROVIDER", "nvidia").lower()
-    if provider == "deepseek":
+    provider = os.environ.get("LLM_PROVIDER", "gemini").lower()
+    if provider == "gemini":
+        # Varsayılan: Google Gemini (OpenAI uyumlu endpoint)
         client = OpenAI(
-            api_key=os.environ.get("DEEPSEEK_API_KEY"),
-            base_url="https://api.deepseek.com",
-            timeout=25.0,    # Vercel 30s limit; 25s bırakıyoruz
-            max_retries=1    # Otomatik retry'ı 1 ile sınırla
+            api_key=os.environ.get("GEMINI_API_KEY"),
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            timeout=20.0,
+            max_retries=0
         )
-        model = "deepseek-chat"
-    else:
-        # Varsayılan: NVIDIA NIM
+        model = "gemini-3.5-flash"
+    elif provider == "nvidia":
         client = OpenAI(
             api_key=os.environ.get("NVIDIA_API_KEY"),
             base_url="https://integrate.api.nvidia.com/v1",
-            timeout=25.0,    # Vercel 30s limit; 25s bırakıyoruz
-            max_retries=1    # 503 retry'ı 1 ile sınırla (Vercel'de timeout önler)
+            timeout=20.0,
+            max_retries=0
         )
         model = "meta/llama-3.3-70b-instruct"
+    elif provider == "deepseek":
+        client = OpenAI(
+            api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            base_url="https://api.deepseek.com",
+            timeout=20.0,
+            max_retries=0
+        )
+        model = "deepseek-chat"
+    else:
+        raise ValueError(f"Bilinmeyen LLM_PROVIDER: {provider}")
     return client, model
 
 llm, MODEL = _build_client()

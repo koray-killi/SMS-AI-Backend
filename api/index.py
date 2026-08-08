@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import os
 import json
 from openai import OpenAI
+import openai as openai_lib
 from tavily import TavilyClient
 from dotenv import load_dotenv
 
@@ -20,14 +21,18 @@ def _build_client() -> tuple[OpenAI, str]:
     if provider == "deepseek":
         client = OpenAI(
             api_key=os.environ.get("DEEPSEEK_API_KEY"),
-            base_url="https://api.deepseek.com"
+            base_url="https://api.deepseek.com",
+            timeout=25.0,    # Vercel 30s limit; 25s bırakıyoruz
+            max_retries=1    # Otomatik retry'ı 1 ile sınırla
         )
         model = "deepseek-chat"
     else:
         # Varsayılan: NVIDIA NIM
         client = OpenAI(
             api_key=os.environ.get("NVIDIA_API_KEY"),
-            base_url="https://integrate.api.nvidia.com/v1"
+            base_url="https://integrate.api.nvidia.com/v1",
+            timeout=25.0,    # Vercel 30s limit; 25s bırakıyoruz
+            max_retries=1    # 503 retry'ı 1 ile sınırla (Vercel'de timeout önler)
         )
         model = "meta/llama-3.3-70b-instruct"
     return client, model
@@ -164,16 +169,20 @@ def webhook():
 
         return jsonify({"reply": bot_reply})
 
-    except Exception as e:
-        error_msg = str(e)
-        # Rate limit veya servis hatası
-        if "rate_limit" in error_msg.lower() or "429" in error_msg:
-            return jsonify({"reply": "Şu an yoğunluk var, birazdan tekrar yaz."}), 429
-        # Timeout
-        if "timeout" in error_msg.lower():
+    except openai_lib.RateLimitError:
+        return jsonify({"reply": "Şu an yoğunluk var, birazdan tekrar yaz."}), 429
+    except openai_lib.APIStatusError as e:
+        if e.status_code == 503:
+            return jsonify({"reply": "AI servisi şu an meşgul, biraz sonra dene."}), 503
+        if e.status_code == 504 or e.status_code == 408:
             return jsonify({"reply": "Yanıt geç geldi, tekrar dene."}), 504
-        # Genel hata
-        return jsonify({"reply": f"Bir hata oluştu: {error_msg}"}), 500
+        return jsonify({"reply": f"API hatası ({e.status_code})."}), 500
+    except openai_lib.APITimeoutError:
+        return jsonify({"reply": "Yanıt geç geldi, tekrar dene."}), 504
+    except openai_lib.APIConnectionError:
+        return jsonify({"reply": "Bağlantı hatası, tekrar dene."}), 502
+    except Exception as e:
+        return jsonify({"reply": f"Bir hata oluştu: {str(e)}"}), 500
 
 # Vercel lokal testler için (Vercel'de çalışırken bu blok tetiklenmez)
 if __name__ == '__main__':

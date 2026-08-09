@@ -46,10 +46,31 @@ def webhook():
                     "country": "TR"
                 }
             }],
-            max_output_tokens=256
+            max_output_tokens=512
         )
 
-        bot_reply = response.output_text or "Tekrar yaz, yanıt oluşturulamadı."
+        # ── Yanıt metnini çıkar ─────────────────────────────────────────────
+        # output_text bazen boş dönebilir; output item'lardan elle çıkar.
+        bot_reply = response.output_text
+
+        if not bot_reply:
+            # output listesindeki tüm metin parçalarını topla
+            parts = []
+            for item in response.output:
+                if hasattr(item, 'content'):
+                    for content_part in item.content:
+                        if hasattr(content_part, 'text') and content_part.text:
+                            parts.append(content_part.text)
+                elif hasattr(item, 'text') and item.text:
+                    parts.append(item.text)
+            bot_reply = "".join(parts)
+
+        # Hâlâ boşsa, incomplete olabilir
+        if not bot_reply:
+            status = getattr(response, 'status', 'unknown')
+            details = getattr(response, 'incomplete_details', None)
+            bot_reply = f"Yanıt oluşturulamadı (status: {status}, details: {details})"
+
         return jsonify({"reply": bot_reply})
 
     except openai_lib.RateLimitError:

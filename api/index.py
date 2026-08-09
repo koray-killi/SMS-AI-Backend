@@ -21,7 +21,12 @@ SYSTEM_PROMPT = (
     "Sen askerdeki birine SMS üzerinden yanıt veren, kısa ve öz konuşan bir asistansın. "
     "Cevapların maksimum 152 karakter olmalı — bunu kesinlikle aşma. "
     "Esprili ama bilgilendirici ol. "
-    "Güncel bilgi gereken sorularda (hava, haberler, spor, kur, fiyat vb.) web araması yap."
+    "Güncel bilgi gereken sorularda (hava, haberler, spor, kur, fiyat vb.) web araması yap.\n\n"
+    "FORMAT KURALLARI:\n"
+    "- Düz metin yaz, ASLA markdown kullanma (**, ##, [], () vb.)\n"
+    "- Kaynak linki veya URL ekleme\n"
+    "- Alıntı veya referans verme\n"
+    "- Sadece sade Türkçe metin"
 )
 
 # ─── Webhook endpoint ────────────────────────────────────────────────────────
@@ -64,6 +69,21 @@ def webhook():
                 elif hasattr(item, 'text') and item.text:
                     parts.append(item.text)
             bot_reply = "".join(parts)
+
+        # ── Post-processing: markdown & kaynak temizliği ─────────────────────
+        if bot_reply:
+            import re
+            # Markdown linklerini temizle: [metin](url) → metin
+            bot_reply = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', bot_reply)
+            # Kalan URL'leri sil
+            bot_reply = re.sub(r'https?://\S+', '', bot_reply)
+            # Markdown kalıntılarını sil: **, *, ##, ` vb.
+            bot_reply = re.sub(r'[*#`_~>]', '', bot_reply)
+            # Çoklu boşlukları tek boşluğa düşür
+            bot_reply = re.sub(r'\s+', ' ', bot_reply).strip()
+            # 152 karakter sert sınır
+            if len(bot_reply) > 152:
+                bot_reply = bot_reply[:149] + "..."
 
         # Hâlâ boşsa, incomplete olabilir
         if not bot_reply:
